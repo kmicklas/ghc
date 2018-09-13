@@ -581,7 +581,7 @@ home-package modules however, so it's safe for the HPT to be empty.
 dontLeakTheHPT :: IfL a -> IfL a
 dontLeakTheHPT thing_inside = do
   let
-    cleanTopEnv HscEnv{..} =
+    cleanTopEnv hsc_env@HscEnv{..} =
        let
          -- wrinkle: when we're typechecking in --backpack mode, the
          -- instantiation of a signature might reside in the HPT, so
@@ -592,7 +592,7 @@ dontLeakTheHPT thing_inside = do
          -- a bit of a hack, better suggestions welcome). A number of
          -- tests in testsuite/tests/backpack break without this
          -- tweak.
-         !hpt | hscTarget hsc_dflags == HscNothing = hsc_HPT
+         !hpt | hscTarget (hsc_dflags hsc_env) == HscNothing = hsc_HPT
               | otherwise = emptyHomePackageTable
        in
        HscEnv {  hsc_targets      = panic "cleanTopEnv: hsc_targets"
