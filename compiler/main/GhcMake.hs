@@ -575,7 +575,7 @@ guessOutputFile = modifySession $ \env ->
     in
     case outputFile dflags of
         Just _ -> env
-        Nothing -> env { hsc_dflags = dflags { outputFile = name_exe } }
+        Nothing -> modify_hsc_dflags env $ \dflags -> dflags { outputFile = name_exe }
 
 -- -----------------------------------------------------------------------------
 --
@@ -1229,9 +1229,9 @@ parUpsweep_one mod home_mod_map comp_graph_loops lcl_dflags mHscMessage cleanup 
                  , filesToClean = filesToClean lcl_dflags } }
 
     localize_hsc_env hsc_env
-        = hsc_env { hsc_dflags = (hsc_dflags hsc_env)
-                     { log_action = log_action lcl_dflags
-                     , filesToClean = filesToClean lcl_dflags } }
+        = modify_hsc_dflags hsc_env $ \dflags -> dflags
+              { log_action = log_action lcl_dflags
+              , filesToClean = filesToClean lcl_dflags }
 
 -- -----------------------------------------------------------------------------
 --
@@ -1971,16 +1971,16 @@ downsweep hsc_env old_summaries excl_mods allow_dup_roots
         old_summary_map = mkNodeMap old_summaries
 
         getRootSummary :: Target -> IO (Either ErrMsg ModSummary)
-        getRootSummary (Target (TargetFile file mb_phase) obj_allowed maybe_buf)
+        getRootSummary (Target (TargetFile file mb_phase) package obj_allowed maybe_buf)
            = do exists <- liftIO $ doesFileExist file
                 if exists
-                    then Right `fmap` summariseFile hsc_env old_summaries file mb_phase
+                    then Right `fmap` summariseFile hsc_env old_summaries file package mb_phase
                                        obj_allowed maybe_buf
                     else return $ Left $ mkPlainErrMsg dflags noSrcSpan $
                            text "can't find file:" <+> text file
-        getRootSummary (Target (TargetModule modl) obj_allowed maybe_buf)
+        getRootSummary (Target (TargetModule modl) package obj_allowed maybe_buf)
            = do maybe_summary <- summariseModule hsc_env old_summary_map NotBoot
-                                           (L rootLoc modl) obj_allowed
+                                           (L rootLoc modl) package obj_allowed
                                            maybe_buf excl_mods
                 case maybe_summary of
                    Nothing -> return $ Left $ moduleNotFoundErr dflags modl
@@ -2001,7 +2001,7 @@ downsweep hsc_env old_summaries excl_mods allow_dup_roots
              dup_roots :: [[ModSummary]]        -- Each at least of length 2
              dup_roots = filterOut isSingleton $ map rights $ nodeMapElts root_map
 
-        loop :: [(Located ModuleName,IsBoot)]
+        loop :: [(Located ModuleName, UnitId, IsBoot)]
                         -- Work list: process these modules
              -> NodeMap [Either ErrMsg ModSummary]
                         -- Visited set; the range is a list because
@@ -2010,7 +2010,7 @@ downsweep hsc_env old_summaries excl_mods allow_dup_roots
              -> IO (NodeMap [Either ErrMsg ModSummary])
                         -- The result is the completed NodeMap
         loop [] done = return done
-        loop ((wanted_mod, is_boot) : ss) done
+        loop ((wanted_mod, package, is_boot) : ss) done
           | Just summs <- Map.lookup key done
           = if isSingleton summs then
                 loop ss done
@@ -2018,7 +2018,7 @@ downsweep hsc_env old_summaries excl_mods allow_dup_roots
                 do { multiRootsErr dflags (rights summs); return Map.empty }
           | otherwise
           = do mb_s <- summariseModule hsc_env old_summary_map
-                                       is_boot wanted_mod True
+                                       is_boot wanted_mod package True
                                        Nothing excl_mods
                case mb_s of
                    Nothing -> loop ss done
@@ -2156,12 +2156,13 @@ summariseFile
         :: HscEnv
         -> [ModSummary]                 -- old summaries
         -> FilePath                     -- source file name
+        -> UnitId
         -> Maybe Phase                  -- start phase
         -> Bool                         -- object code allowed?
         -> Maybe (StringBuffer,UTCTime)
         -> IO ModSummary
 
-summariseFile hsc_env old_summaries file mb_phase obj_allowed maybe_buf
+summariseFile hsc_env old_summaries file package mb_phase obj_allowed maybe_buf
         -- we can use a cached summary if one is available and the
         -- source file hasn't changed,  But we have to look up the summary
         -- by source file, rather than module name as we do in summarise.
@@ -2190,7 +2191,7 @@ summariseFile hsc_env old_summaries file mb_phase obj_allowed maybe_buf
                   -- We have to repopulate the Finder's cache because it
                   -- was flushed before the downsweep.
                   _ <- liftIO $ addHomeModuleToFinder hsc_env
-                    (moduleName (ms_mod old_summary)) (ms_location old_summary)
+                    (moduleName (ms_mod old_summary)) (ms_location old_summary) package
 
                   return old_summary{ ms_obj_date = obj_timestamp
                                     , ms_iface_date = hi_timestamp }
@@ -2221,7 +2222,7 @@ summariseFile hsc_env old_summaries file mb_phase obj_allowed maybe_buf
 
         -- Tell the Finder cache where it is, so that subsequent calls
         -- to findModule will find it, even if it's not on any search path
-        mod <- liftIO $ addHomeModuleToFinder hsc_env mod_name location
+        mod <- liftIO $ addHomeModuleToFinder hsc_env mod_name location package
 
         -- when the user asks to load a source file by name, we only
         -- use an object file if -fobject-code is on.  See #1205.
@@ -2262,13 +2263,14 @@ summariseModule
           -> NodeMap ModSummary -- Map of old summaries
           -> IsBoot             -- IsBoot <=> a {-# SOURCE #-} import
           -> Located ModuleName -- Imported module to be summarised
+          -> UnitId
           -> Bool               -- object code allowed?
           -> Maybe (StringBuffer, UTCTime)
           -> [ModuleName]               -- Modules to exclude
           -> IO (Maybe (Either ErrMsg ModSummary))      -- Its new summary
 
 summariseModule hsc_env old_summary_map is_boot (L loc wanted_mod)
-                obj_allowed maybe_buf excl_mods
+                package obj_allowed maybe_buf excl_mods
   | wanted_mod `elem` excl_mods
   = return Nothing
 

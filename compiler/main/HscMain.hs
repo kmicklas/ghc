@@ -187,7 +187,7 @@ newHscEnv dflags = do
     nc_var  <- newIORef (initNameCache us knownKeyNames)
     fc_var  <- newIORef emptyInstalledModuleEnv
     iserv_mvar <- newMVar Nothing
-    return HscEnv {  hsc_dflags       = dflags
+    return HscEnv {  hsc_dflagsPerUnit = Map.singleton (thisPackage dflags) dflags
                   ,  hsc_targets      = []
                   ,  hsc_mod_graph    = emptyMG
                   ,  hsc_IC           = emptyInteractiveContext dflags
@@ -672,8 +672,8 @@ hscIncrementalCompile :: Bool
 hscIncrementalCompile always_do_basic_recompilation_check m_tc_result
     mHscMessage hsc_env' mod_summary source_modified mb_old_iface mod_index
   = do
-    dflags <- initializePlugins hsc_env' (hsc_dflags hsc_env')
-    let hsc_env'' = hsc_env' { hsc_dflags = dflags }
+    dflagsPerUnit <- mapM (initializePlugins hsc_env') $ hsc_dflagsPerUnit hsc_env'
+    let hsc_env'' = hsc_env' { hsc_dflagsPerUnit = dflagsPerUnit }
 
     -- One-shot mode needs a knot-tying mutable variable for interface
     -- files. See TcRnTypes.TcGblEnv.tcg_type_env_var.
@@ -1210,9 +1210,8 @@ hscSimplify hsc_env plugins modguts =
 hscSimplify' :: [String] -> ModGuts -> Hsc ModGuts
 hscSimplify' plugins ds_result = do
     hsc_env <- getHscEnv
-    let hsc_env_with_plugins = hsc_env
-          { hsc_dflags = foldr addPluginModuleName (hsc_dflags hsc_env) plugins
-          }
+    let hsc_env_with_plugins = modify_hsc_dflags hsc_env $ \dflags ->
+            foldr addPluginModuleName dflags plugins
     {-# SCC "Core2Core" #-}
       liftIO $ core2core hsc_env_with_plugins ds_result
 
