@@ -187,11 +187,11 @@ newHscEnv dflags = do
     nc_var  <- newIORef (initNameCache us knownKeyNames)
     fc_var  <- newIORef emptyInstalledModuleEnv
     iserv_mvar <- newMVar Nothing
-    return HscEnv {  hsc_dflagsPerUnit = Map.singleton (thisPackage dflags) dflags
+    return HscEnv {  hsc_unitEnv = Map.singleton (thisPackage dflags) $ UnitEnv dflags emptyHomePackageTable
+                  ,  hsc_currentPackage = thisPackage dflags
                   ,  hsc_targets      = []
                   ,  hsc_mod_graph    = emptyMG
                   ,  hsc_IC           = emptyInteractiveContext dflags
-                  ,  hsc_HPT          = emptyHomePackageTable
                   ,  hsc_EPS          = eps_var
                   ,  hsc_NC           = nc_var
                   ,  hsc_FC           = fc_var
@@ -672,8 +672,10 @@ hscIncrementalCompile :: Bool
 hscIncrementalCompile always_do_basic_recompilation_check m_tc_result
     mHscMessage hsc_env' mod_summary source_modified mb_old_iface mod_index
   = do
-    dflagsPerUnit <- mapM (initializePlugins hsc_env') $ hsc_dflagsPerUnit hsc_env'
-    let hsc_env'' = hsc_env' { hsc_dflagsPerUnit = dflagsPerUnit }
+    unitEnvs <- forM (hsc_unitEnv hsc_env') $ \ue -> do
+      dflags <- initializePlugins hsc_env' $ unitEnv_dflags ue
+      return $ ue { unitEnv_dflags = dflags }
+    let hsc_env'' = hsc_env' { hsc_unitEnv = unitEnvs }
 
     -- One-shot mode needs a knot-tying mutable variable for interface
     -- files. See TcRnTypes.TcGblEnv.tcg_type_env_var.
@@ -699,10 +701,8 @@ hscIncrementalCompile always_do_basic_recompilation_check m_tc_result
             -- Knot tying!  See Note [Knot-tying typecheckIface]
             hmi <- liftIO . fixIO $ \hmi' -> do
                 let hsc_env' =
-                        hsc_env {
-                            hsc_HPT = addToHpt (hsc_HPT hsc_env)
-                                        (ms_mod_name mod_summary) hmi'
-                        }
+                        modify_hsc_HPT hsc_env $ \hpt ->
+                            addToHpt hpt (ms_mod_name mod_summary) hmi'
                 -- NB: This result is actually not that useful
                 -- in one-shot mode, since we're not going to do
                 -- any further typechecking.  It's much more useful

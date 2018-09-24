@@ -582,8 +582,7 @@ setSessionDynFlags :: GhcMonad m => DynFlags -> m [InstalledUnitId]
 setSessionDynFlags dflags = do
   dflags' <- checkNewDynFlags dflags
   (dflags'', preload) <- liftIO $ initPackages dflags'
-  modifySession $ \h -> h{ hsc_dflags = dflags''
-                         , hsc_IC = (hsc_IC h){ ic_dflags = dflags'' } }
+  modifySession $ \h -> set_hsc_dflags (h{ hsc_IC = (hsc_IC h){ ic_dflags = dflags'' } }) dflags''
   invalidateModSummaryCache
   return preload
 
@@ -610,7 +609,7 @@ setProgramDynFlags_ invalidate_needed dflags = do
     if (packageFlagsChanged dflags_prev dflags')
        then liftIO $ initPackages dflags'
        else return (dflags', [])
-  modifySession $ \h -> h{ hsc_dflags = dflags'' }
+  modifySession $ \h -> set_hsc_dflags h dflags''
   when invalidate_needed $ invalidateModSummaryCache
   return preload
 
@@ -710,7 +709,7 @@ removeTarget :: GhcMonad m => TargetId -> m ()
 removeTarget target_id
   = modifySession (\h -> h{ hsc_targets = filter (hsc_targets h) })
   where
-   filter targets = [ t | t@(Target id _ _) <- targets, id /= target_id ]
+   filter targets = [ t | t@(Target id _ _ _) <- targets, id /= target_id ]
 
 -- | Attempts to guess what Target a string refers to.  This function
 -- implements the @--make@/GHCi command-line syntax for filenames:
