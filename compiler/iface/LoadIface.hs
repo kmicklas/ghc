@@ -592,13 +592,13 @@ dontLeakTheHPT thing_inside = do
          -- a bit of a hack, better suggestions welcome). A number of
          -- tests in testsuite/tests/backpack break without this
          -- tweak.
-         !hpt | hscTarget (hsc_dflags hsc_env) == HscNothing = hsc_HPT
-              | otherwise = emptyHomePackageTable
+         -- !hpt | hscTarget (hsc_dflags hsc_env) == HscNothing = hsc_HPT hsc_env
+         --      | otherwise = emptyHomePackageTable
        in
        HscEnv {  hsc_targets      = panic "cleanTopEnv: hsc_targets"
               ,  hsc_mod_graph    = panic "cleanTopEnv: hsc_mod_graph"
               ,  hsc_IC           = panic "cleanTopEnv: hsc_IC"
-              ,  hsc_HPT          = hpt
+              -- ,  hsc_HPT          = hpt
               , .. }
 
   updTopEnv cleanTopEnv $ do

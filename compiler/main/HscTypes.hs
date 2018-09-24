@@ -12,6 +12,7 @@
 module HscTypes (
         -- * compilation state
         HscEnv(..), hscEPS, hsc_HPT, hsc_dflags, set_hsc_dflags, modify_hsc_dflags,
+        UnitEnv(..), modify_hsc_HPT,
         FinderCache, FindResult(..), InstalledFindResult(..),
         Target(..), TargetId(..), pprTarget, pprTargetId,
         HscStatus(..),
@@ -260,11 +261,7 @@ hsc_dflags :: HscEnv -> DynFlags
 hsc_dflags = unitEnv_dflags . hsc_currentUnitEnv
 
 set_hsc_dflags :: HscEnv -> DynFlags -> HscEnv
-set_hsc_dflags e dflags = e
-    { hsc_unitEnv = M.adjust update (hsc_currentPackage e) $ hsc_unitEnv e
-    }
-  where
-    update unitEnv = unitEnv { unitEnv_dflags = dflags }
+set_hsc_dflags e dflags = modify_hsc_dflags e $ const dflags
 
 modify_hsc_dflags :: HscEnv -> (DynFlags -> DynFlags) -> HscEnv
 modify_hsc_dflags e f = e
@@ -275,6 +272,16 @@ modify_hsc_dflags e f = e
 
 hsc_HPT :: HscEnv -> HomePackageTable
 hsc_HPT = unitEnv_homePackageTable . hsc_currentUnitEnv
+
+set_hsc_HPT :: HscEnv -> HomePackageTable -> HscEnv
+set_hsc_HPT e hpt = modify_hsc_HPT e $ const hpt
+
+modify_hsc_HPT :: HscEnv -> (HomePackageTable -> HomePackageTable) -> HscEnv
+modify_hsc_HPT e f = e
+  { hsc_unitEnv = M.adjust update (hsc_currentPackage e) $ hsc_unitEnv e
+  }
+  where
+    update unitEnv = unitEnv { unitEnv_homePackageTable = f $ unitEnv_homePackageTable unitEnv }
 
 runHsc :: HscEnv -> Hsc a -> IO a
 runHsc hsc_env (Hsc hsc) = do

@@ -130,12 +130,33 @@ findOtherHomeModule hsc_env mod_name = do
     deps = explicitPackages $ pkgState $ hsc_dflags hsc_env
     homeDeps = filter (flip M.member $ hsc_unitEnv hsc_env) deps
 
+-- TODO: fix this
+emptyModuleOrigin :: ModuleOrigin
+emptyModuleOrigin = ModOrigin Nothing [] [] False
+
 handleOtherHomeModule :: HscEnv -> ModuleName -> FindResult -> UnitId -> IO FindResult
 handleOtherHomeModule hsc_env mod_name fr unitId = do
   result <- flip findInstalledHomeModule mod_name $ hsc_env { hsc_currentPackage = unitId }
-  case (result, fr) of
-    (InstalledFound ml _, NotFound _ _ _ _ _ _) ->
-      return $ Found ml $ mkModule unitId mod_name
+  return $ case (result, fr) of
+    (InstalledFound iml _, Found ml m) ->
+      FoundMultiple [(m, emptyModuleOrigin), (mkModule unitId mod_name, emptyModuleOrigin)]
+    (InstalledFound iml _, FoundMultiple results) ->
+      FoundMultiple $ results ++ [(mkModule unitId mod_name, emptyModuleOrigin)]
+    (InstalledFound iml _, _) ->
+      Found iml $ mkModule unitId mod_name
+
+    (InstalledNoPackage _, fr') -> fr'
+
+    (InstalledNotFound ipaths _, NotFound paths pkg mods_hidden pkgs_hidden unusables suggestions) ->
+      NotFound
+        { fr_paths = paths ++ ipaths
+        , fr_pkg = Just unitId
+        , fr_mods_hidden = mods_hidden
+        , fr_pkgs_hidden = pkgs_hidden
+        , fr_unusables = unusables
+        , fr_suggestions = suggestions
+        }
+    (InstalledNotFound ipaths _, fr') -> fr'
 
 -- | Locate a plugin module requested by the user, for a compiler
 -- plugin.  This consults the same set of exposed packages as

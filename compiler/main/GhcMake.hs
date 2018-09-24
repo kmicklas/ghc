@@ -309,7 +309,7 @@ load' how_much mHscMessage mod_graph = do
     -- before we unload anything, make sure we don't leave an old
     -- interactive context around pointing to dead bindings.  Also,
     -- write the pruned HPT to allow the old HPT to be GC'd.
-    setSession $ discardIC $ hsc_env { hsc_HPT = pruned_hpt }
+    setSession $ discardIC $ set_hsc_HPT hsc_env pruned_hpt
 
     liftIO $ debugTraceMsg dflags 2 (text "Stable obj:" <+> ppr stable_obj $$
                             text "Stable BCO:" <+> ppr stable_bco)
@@ -394,7 +394,7 @@ load' how_much mHscMessage mod_graph = do
     let upsweep_fn | n_jobs > 1 = parUpsweep n_jobs
                    | otherwise  = upsweep
 
-    setSession hsc_env{ hsc_HPT = emptyHomePackageTable }
+    setSession hsc_env { hsc_unitEnv = (\ue -> ue { unitEnv_homePackageTable = emptyHomePackageTable }) <$> hsc_unitEnv hsc_env }
     (upsweep_ok, modsUpswept) <- withDeferredDiagnostics $
       upsweep_fn mHscMessage pruned_hpt stable_mods cleanup mg
 
@@ -491,7 +491,7 @@ load' how_much mHscMessage mod_graph = do
           -- Link everything together
           linkresult <- liftIO $ link (ghcLink dflags) dflags False hpt5
 
-          modifySession $ \hsc_env -> hsc_env{ hsc_HPT = hpt5 }
+          modifySession $ \hsc_env -> set_hsc_HPT hsc_env hpt5
           loadFinish Failed linkresult
 
 
@@ -516,7 +516,7 @@ loadFinish all_ok Succeeded
 discardProg :: HscEnv -> HscEnv
 discardProg hsc_env
   = discardIC $ hsc_env { hsc_mod_graph = emptyMG
-                        , hsc_HPT = emptyHomePackageTable }
+                        , hsc_unitEnv = (\ue -> ue { unitEnv_homePackageTable = emptyHomePackageTable }) <$> hsc_unitEnv hsc_env }
 
 -- | Discard the contents of the InteractiveContext, but keep the DynFlags.
 -- It will also keep ic_int_print and ic_monad if their names are from
@@ -1201,9 +1201,7 @@ parUpsweep_one mod home_mod_map comp_graph_loops lcl_dflags mHscMessage cleanup 
 
                 -- Update and fetch the global HscEnv.
                 lcl_hsc_env' <- modifyMVar hsc_env_var $ \hsc_env -> do
-                    let hsc_env' = hsc_env
-                                     { hsc_HPT = addToHpt (hsc_HPT hsc_env)
-                                                           this_mod mod_info }
+                    let hsc_env' = modify_hsc_HPT hsc_env $ \hpt -> addToHpt hpt this_mod mod_info
                     -- We've finished typechecking the module, now we must
                     -- retypecheck the loop AGAIN to ensure unfoldings are
                     -- updated.  This time, however, we include the loop
@@ -1334,8 +1332,7 @@ upsweep mHscMessage old_hpt stable_mods cleanup sccs = do
                 let this_mod = ms_mod_name mod
 
                         -- Add new info to hsc_env
-                    hpt1     = addToHpt (hsc_HPT hsc_env2) this_mod mod_info
-                    hsc_env3 = hsc_env2 { hsc_HPT = hpt1, hsc_type_env_var = Nothing }
+                    hsc_env3 = modify_hsc_HPT (hsc_env2 { hsc_type_env_var = Nothing }) $ \hpt -> addToHpt hpt this_mod mod_info
 
                         -- Space-saving: delete the old HPT entry
                         -- for mod BUT if mod is a hs-boot
@@ -1742,14 +1739,14 @@ typecheckLoop dflags hsc_env mods = do
      text "Re-typechecking loop: " <> ppr mods
   new_hpt <-
     fixIO $ \new_hpt -> do
-      let new_hsc_env = hsc_env{ hsc_HPT = new_hpt }
+      let new_hsc_env = set_hsc_HPT hsc_env new_hpt
       mds <- initIfaceCheck (text "typecheckLoop") new_hsc_env $
                 mapM (typecheckIface . hm_iface) hmis
       let new_hpt = addListToHpt old_hpt
                         (zip mods [ hmi{ hm_details = details }
                                   | (hmi,details) <- zip hmis mds ])
       return new_hpt
-  return hsc_env{ hsc_HPT = new_hpt }
+  return set_hsc_HPT hsc_env new_hpt
   where
     old_hpt = hsc_HPT hsc_env
     hmis    = map (expectJust "typecheckLoop" . lookupHpt old_hpt) mods
