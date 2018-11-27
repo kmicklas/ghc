@@ -168,7 +168,7 @@ ghciCommands :: [Command]
 ghciCommands = map mkCmd [
   -- Hugs users are accustomed to :e, so make sure it doesn't overlap
   ("?",         keepGoing help,                 noCompletion),
-  ("add",       keepGoingPaths addModule,       completeFilename),
+  ("add",       keepGoingPaths addModule,       fallbackCompletion completeModule completeFilename),
   ("abandon",   keepGoing abandonCmd,           noCompletion),
   ("break",     keepGoing breakCmd,             completeIdentifier),
   ("back",      keepGoing backCmd,              noCompletion),
