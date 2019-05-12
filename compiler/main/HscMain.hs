@@ -193,7 +193,7 @@ newHscEnv dflags = do
     nc_var  <- newIORef (initNameCache us knownKeyNames)
     fc_var  <- newIORef emptyInstalledModuleEnv
     iserv_mvar <- newMVar Nothing
-    return HscEnv {  hsc_unitEnv = Map.singleton (thisPackage dflags) $ UnitEnv dflags emptyHomePackageTable
+    return HscEnv {  hsc_unitEnv = M.singleton (thisPackage dflags) $ UnitEnv dflags emptyHomePackageTable
                   ,  hsc_currentPackage = thisPackage dflags
                   ,  hsc_targets      = []
                   ,  hsc_mod_graph    = emptyMG
