@@ -2487,7 +2487,7 @@ withDeferredDiagnostics f = do
             sequence_ $ reverse actions
 
         setLogAction action = modifySession $ \hsc_env ->
-          hsc_env{ hsc_dflags = (hsc_dflags hsc_env){ log_action = action } }
+          modify_hsc_dflags hs_env $ \dflags -> dflags { log_action = action }
 
     gbracket
       (setLogAction deferDiagnostics)
